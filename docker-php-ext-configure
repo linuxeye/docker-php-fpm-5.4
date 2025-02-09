@@ -1,0 +1,98 @@
+#!/bin/sh
+set -e
+
+# prefer user supplied CFLAGS, but default to our PHP_CFLAGS
+: ${CFLAGS:=$PHP_CFLAGS}
+: ${CPPFLAGS:=$PHP_CPPFLAGS}
+: ${LDFLAGS:=$PHP_LDFLAGS}
+export CFLAGS CPPFLAGS LDFLAGS
+
+srcExists=
+if [ -d /usr/src/php ]; then
+	srcExists=1
+fi
+docker-php-source extract
+if [ -z "$srcExists" ]; then
+	touch /usr/src/php/.docker-delete-me
+fi
+
+cd /usr/src/php/ext
+
+usage() {
+	echo "usage: $0 ext-name [configure flags]"
+	echo "   ie: $0 gd --with-jpeg-dir=/usr/local/something"
+	echo
+	echo 'Possible values for ext-name:'
+	find . \
+			-mindepth 2 \
+			-maxdepth 2 \
+			-type f \
+			-name 'config.m4' \
+		| xargs -n1 dirname \
+		| xargs -n1 basename \
+		| sort \
+		| xargs
+	echo
+	echo 'Some of the above modules are already compiled into PHP; please check'
+	echo 'the output of "php -i" to see which modules are already loaded.'
+}
+
+ext="$1"
+if [ -z "$ext" ] || [ ! -d "$ext" ]; then
+	usage >&2
+	exit 1
+fi
+shift
+
+pm='unknown'
+if [ -e /lib/apk/db/installed ]; then
+	pm='apk'
+fi
+
+if [ "$pm" = 'apk' ]; then
+	if \
+		[ -n "$PHPIZE_DEPS" ] \
+		&& ! apk info --installed .phpize-deps > /dev/null \
+		&& ! apk info --installed .phpize-deps-configure > /dev/null \
+	; then
+		apk add --no-cache --virtual .phpize-deps-configure $PHPIZE_DEPS
+	fi
+fi
+
+if command -v dpkg-architecture > /dev/null; then
+	gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"
+	set -- --build="$gnuArch" "$@"
+fi
+
+if [ "$ext" = 'gd' ]; then
+	cat > /tmp/php-gd-newvpx.diff << EOF
+--- ext/gd/libgd/webpimg.c      2015-09-02 04:09:37.000000000 +0800
++++ /tmp/webpimg.c      2023-04-24 12:54:04.836975923 +0800
+@@ -706,14 +706,14 @@
+     codec_ctl(&enc, VP8E_SET_STATIC_THRESHOLD, 0);
+     codec_ctl(&enc, VP8E_SET_TOKEN_PARTITIONS, 2);
+ 
+-    vpx_img_wrap(&img, IMG_FMT_I420,
++    vpx_img_wrap(&img, VPX_IMG_FMT_I420,
+                  y_width, y_height, 16, (uint8*)(Y));
+-    img.planes[PLANE_Y] = (uint8*)(Y);
+-    img.planes[PLANE_U] = (uint8*)(U);
+-    img.planes[PLANE_V] = (uint8*)(V);
+-    img.stride[PLANE_Y] = y_stride;
+-    img.stride[PLANE_U] = uv_stride;
+-    img.stride[PLANE_V] = uv_stride;
++    img.planes[VPX_PLANE_Y] = (uint8*)(Y);
++    img.planes[VPX_PLANE_U] = (uint8*)(U);
++    img.planes[VPX_PLANE_V] = (uint8*)(V);
++    img.stride[VPX_PLANE_Y] = y_stride;
++    img.stride[VPX_PLANE_U] = uv_stride;
++    img.stride[VPX_PLANE_V] = uv_stride;
+ 
+     res = vpx_codec_encode(&enc, &img, 0, 1, 0, VPX_DL_BEST_QUALITY);
+ 
+EOF
+	patch -p1 < /tmp/php-gd-newvpx.diff && rm -f /tmp/php-gd-newvpx.diff
+fi
+cd "$ext"
+phpize
+./configure "$@"
