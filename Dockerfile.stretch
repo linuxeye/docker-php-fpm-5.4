@@ -24,7 +24,6 @@ ENV PHP_BUILD_DEPS=" \
 	libsqlite3-dev \
 # libssl-dev/stretch 1.1.0l-1
 	libssl-dev \
-	patch \
 	libxml2-dev"
 
 ENV PHP_RUNTIME_DEPS=" \
@@ -161,7 +160,7 @@ RUN set -eux \
 	&& cd /usr/src/php  \
 	\
         # ========== 新增：下载并应用 CVE 补丁 ==========
-        && curl -sS -L --fail "https://raw.githubusercontent.com/vperetti/php-cve-2026-109618-109619-backports/main/patches/php-5.5-CVE-2026-109618-109619.patch" -o /tmp/php-cve-2026.patch \
+        && curl -sS -L --fail "https://raw.githubusercontent.com/vperetti/php-cve-2026-109618-109619-backports/main/patches/php-5.4-CVE-2026-109618-109619.patch" -o /tmp/php-cve-2026.patch \
         && patch -p1 < /tmp/php-cve-2026.patch \
         && rm -f /tmp/php-cve-2026.patch \
         # ===============================================
